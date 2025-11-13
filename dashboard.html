@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Hostel Leave - Dashboard</title>
+  <style>
+    :root { --accent1:#0984e3; --accent2:#00b894; --card-border:#74b9ff; }
+    html,body { height:100%; margin:0; font-family:Inter, "Poppins", Arial, sans-serif; }
+    body {
+      display:flex; flex-direction:column; align-items:center;
+      background: linear-gradient(135deg,#74b9ff 0%, #a29bfe 100%);
+      min-height:100vh;
+    }
+    .navbar {
+      width:100%; display:flex; justify-content:space-between; align-items:center;
+      padding:12px 20px; box-shadow:0 2px 8px rgba(0,0,0,0.12);
+      background: linear-gradient(90deg,var(--accent1), var(--accent2));
+      color:white; position:sticky; top:0; z-index:20;
+    }
+    .navbar .logo { font-weight:700; display:flex; align-items:center; gap:10px; font-size:18px; }
+    .nav-actions { display:flex; gap:12px; align-items:center; }
+    .btn {
+      padding:8px 12px; border-radius:8px; border:none; cursor:pointer; font-weight:600;
+      background: rgba(255,255,255,0.12); color:white;
+    }
+    .btn.secondary { background: rgba(255,255,255,0.18); }
+    .btn.danger { background:#e74c3c; }
+
+    .page-wrap { width:100%; display:flex; justify-content:center; padding:36px 16px; box-sizing:border-box; }
+    .card {
+      width:420px; background:#fff; border-radius:14px; padding:24px;
+      box-shadow:0 8px 30px rgba(10,20,40,0.12); border:3px solid rgba(116,185,255,0.25);
+    }
+    h2 { text-align:center; margin:0 0 10px; font-size:22px; }
+    p.meta { margin:6px 0; color:#222; font-size:14px; }
+    hr.sep { border:none; border-top:1px solid #e6e9ee; margin:14px 0; }
+
+    label { display:block; font-weight:600; margin-top:12px; font-size:13px; color:#333; }
+    input[type="datetime-local"], textarea {
+      width:100%; padding:10px 12px; border-radius:8px; border:1px solid #d6dbe6; font-size:14px;
+      box-sizing:border-box;
+    }
+    textarea { min-height:86px; resize:vertical; }
+
+    .apply-btn {
+      width:100%; margin-top:16px; padding:10px; border-radius:10px; border:none;
+      background: linear-gradient(90deg,var(--accent2), var(--accent1));
+      color:white; font-weight:700; cursor:pointer;
+    }
+
+    .msg { margin-top:12px; font-weight:600; text-align:center; }
+    .msg.ok { color:#2ecc71; }
+    .msg.err { color:#e67e22; }
+
+    .spinner-overlay {
+      position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
+      background: rgba(0,0,0,0.35); z-index:999;
+      visibility:hidden; opacity:0; transition:opacity .18s ease;
+    }
+    .spinner-overlay.show { visibility:visible; opacity:1; }
+    .spinner {
+      width:48px; height:48px; border-radius:50%; border:6px solid rgba(255,255,255,0.9);
+      border-top-color: rgba(0,0,0,0.2); animation:spin 1s linear infinite;
+    }
+    @keyframes spin { to { transform:rotate(360deg); } }
+
+    @media (max-width:480px) { .card { width:92%; padding:18px; } }
+  </style>
+</head>
+<body>
+  <!-- Navbar -->
+  <header class="navbar">
+    <div class="logo">🏠 <span style="margin-left:6px">Hostel Leave System</span></div>
+    <div class="nav-actions">
+      <button class="btn secondary" id="leaveHistoryBtn">Leave History</button>
+      <div id="navName" style="color:white; font-weight:700; padding:6px 10px; border-radius:8px; background:rgba(255,255,255,0.08)">User</div>
+      <button class="btn danger" id="logoutBtn">Logout</button>
+    </div>
+  </header>
+
+  <!-- Page -->
+  <main class="page-wrap">
+    <div class="card" role="main">
+      <h2 id="welcomeTitle">Welcome</h2>
+      <p class="meta"><strong>Hostel:</strong> <span id="hostelText">-</span></p>
+      <p class="meta"><strong>Year:</strong> <span id="yearText">-</span></p>
+      <hr class="sep">
+
+      <h3 style="margin:0 0 6px 0">Apply for Leave</h3>
+      <label for="from">From Date & Time</label>
+      <input id="from" type="datetime-local" />
+
+      <label for="to">To Date & Time</label>
+      <input id="to" type="datetime-local" />
+
+      <label for="reason">Reason</label>
+      <textarea id="reason" placeholder="Enter reason..."></textarea>
+
+      <button id="applyBtn" class="apply-btn">Apply Leave</button>
+
+      <div id="message" class="msg" aria-live="polite"></div>
+    </div>
+  </main>
+
+  <!-- Spinner -->
+  <div id="spinner" class="spinner-overlay"><div class="spinner"></div></div>
+
+<script>
+/* ---------- Helper & initial data ---------- */
+const studentId = localStorage.getItem('studentId');
+const studentName = localStorage.getItem('studentName') || 'Student';
+const hostel = localStorage.getItem('hostel') || 'Unknown';
+const year = localStorage.getItem('year') || '-';
+
+document.getElementById('navName').textContent = studentName;
+document.getElementById('welcomeTitle').textContent = `Welcome, ${studentName} 👋`;
+document.getElementById('hostelText').textContent = hostel;
+document.getElementById('yearText').textContent = year;
+
+const spinner = document.getElementById('spinner');
+function showSpinner(on = true){ spinner.classList.toggle('show', !!on); }
+
+const msgEl = document.getElementById('message');
+let msgTimer; // added variable to clear previous timers
+
+function showMessage(text, type = 'ok'){
+  clearTimeout(msgTimer); // clear old timers if any
+  msgEl.textContent = text;
+  msgEl.className = 'msg ' + (type === 'ok' ? 'ok' : 'err');
+
+  // ✅ Hide message automatically after 3 seconds
+  if (text.trim() !== '') {
+    msgTimer = setTimeout(() => {
+      msgEl.textContent = '';
+      msgEl.className = 'msg';
+    }, 3000);
+  }
+}
+
+/* ---------- Logout ---------- */
+document.getElementById('logoutBtn').addEventListener('click', ()=>{
+  localStorage.removeItem('studentId');
+  localStorage.removeItem('studentName');
+  window.location.href = '/login.html';
+});
+
+/* ---------- Leave History button ---------- */
+document.getElementById('leaveHistoryBtn').addEventListener('click', ()=>{
+  window.location.href = '/leave-history.html';
+});
+
+/* ---------- Apply leave ---------- */
+document.getElementById('applyBtn').addEventListener('click', async () => {
+  const fromVal = document.getElementById('from').value;
+  const toVal = document.getElementById('to').value;
+  const reason = document.getElementById('reason').value.trim();
+
+  if (!studentId) {
+    alert('Student ID not found. Please login again.');
+    window.location.href = '/login.html';
+    return;
+  }
+  if (!fromVal || !toVal || !reason) {
+    showMessage('All fields are required', 'err');
+    return;
+  }
+
+  const fromISO = new Date(fromVal).toISOString();
+  const toISO = new Date(toVal).toISOString();
+
+  const payload = {
+    student_id: parseInt(studentId, 10),
+    from_date: fromISO,
+    to_date: toISO,
+    reason: reason
+  };
+
+  try {
+    showSpinner(true);
+    showMessage('', 'ok');
+
+    const resp = await fetch('/apply-leave', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await resp.json().catch(()=>({}));
+
+    if (resp.ok && data.success) {
+      showMessage('✅ Leave applied successfully!', 'ok');
+      document.getElementById('from').value = '';
+      document.getElementById('to').value = '';
+      document.getElementById('reason').value = '';
+    } else {
+      const msg = data.message || data.error || 'Failed to apply leave';
+      showMessage(msg, 'err');
+    }
+  } catch (err) {
+    console.error('Request error', err);
+    showMessage('Server error — check console', 'err');
+  } finally {
+    showSpinner(false);
+  }
+});
+</script>
+</body>
+</html>
