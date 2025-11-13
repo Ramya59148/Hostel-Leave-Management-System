@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Leave History | Hostel Leave System</title>
+
+  <!-- ✅ Add jsPDF Libraries -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
+
+  <style>
+    body {
+      margin: 0;
+      font-family: 'Poppins', sans-serif;
+      background: linear-gradient(135deg, #74b9ff, #a29bfe);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .navbar {
+      width: 100%;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 20px;
+      background: linear-gradient(90deg, #0984e3, #00b894);
+      color: white;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    .navbar .logo { font-weight: 700; }
+    .nav-actions { display: flex; gap: 12px; align-items: center; }
+
+    .btn {
+      padding: 8px 12px;
+      border: none;
+      border-radius: 8px;
+      color: white;
+      cursor: pointer;
+      font-weight: 600;
+    }
+
+    .btn.primary { background: #0984e3; }
+    .btn.danger { background: #e74c3c; }
+
+    .container {
+      background: white;
+      border-radius: 12px;
+      margin-top: 40px;
+      padding: 24px;
+      width: 80%;
+      max-width: 750px;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+    }
+
+    h2 { text-align: center; margin-top: 0; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 16px;
+    }
+
+    th, td {
+      border-bottom: 1px solid #eee;
+      text-align: left;
+      padding: 10px;
+    }
+
+    th { background: #f1f2f6; }
+
+    .status-accepted { color: green; font-weight: 600; }
+    .status-pending { color: orange; font-weight: 600; }
+    .status-rejected { color: red; font-weight: 600; }
+
+    button.pdf-btn {
+      background: #00b894;
+      color: white;
+      border: none;
+      padding: 6px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+    .print-btn {
+      margin-top: 20px;
+      padding: 10px 20px;
+      background-color: #007bff;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      font-weight: bold;
+    }
+
+    .print-btn:hover { background-color: #0056b3; }
+
+    /* Hide button when printing */
+    @media print {
+      .print-btn { display: none; }
+      body { margin: 20px; font-size: 14px; }
+      table { width: 100%; border-collapse: collapse; }
+      th, td { border: 1px solid #000; padding: 8px; }
+    }
+
+    @media print {
+  .navbar {
+    display: none !important;
+  }
+  .print-btn {
+    display: none !important;
+  }
+  body {
+    margin: 20px;
+  }
+}
+
+  </style>
+</head>
+<body>
+  <div class="navbar">
+    <div class="logo">🏠 Hostel Leave System</div>
+    <div class="nav-actions">
+      <button class="btn primary" id="dashboardBtn">Dashboard</button>
+      <div id="navName"></div>
+      <button class="btn danger" id="logoutBtn">Logout</button>
+    </div>
+  </div>
+
+  <div class="container">
+    <h2>My Leave History</h2>
+    <div id="leaveList">Loading...</div>
+  </div>
+
+  <button id="printBtn" class="print-btn">🖨️ Print Leave Slip</button>
+
+  <script>
+    const studentId = localStorage.getItem("studentId");
+    const studentName = localStorage.getItem("studentName") || "Student";
+
+    document.getElementById("navName").textContent = studentName;
+    document.getElementById("dashboardBtn").onclick = () => window.location.href = "/dashboard.html";
+    document.getElementById("logoutBtn").onclick = () => {
+      localStorage.clear();
+      window.location.href = "/login.html";
+    };
+
+    // ✅ Load Leaves
+    async function loadLeaves() {
+      const list = document.getElementById("leaveList");
+      if (!list) return console.error("❌ leaveList element not found!");
+
+      if (!studentId) {
+        list.innerHTML = "<p>Please login again.</p>";
+        return;
+      }
+
+      try {
+        const res = await fetch(`/api/my-leaves?student_id=${studentId}`);
+        if (!res.ok) throw new Error(`HTTP error! Status: ${res.status}`);
+        const leaves = await res.json();
+        console.log("Fetched leaves:", leaves);
+
+        document.getElementById('printBtn').addEventListener('click', function() {
+          window.print();
+        });
+
+        if (!Array.isArray(leaves) || leaves.length === 0) {
+          list.innerHTML = "<p>No leave applications found.</p>";
+          return;
+        }
+
+        let html = `
+          <table>
+            <thead>
+              <tr>
+                <th>From</th>
+                <th>To</th>
+                <th>Reason</th>
+                <th>Status</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+        `;
+
+        for (const leave of leaves) {
+          const fromDate = leave.from_date || "N/A";
+          const toDate = leave.to_date || "N/A";
+          const statusClass = `status-${leave.status.toLowerCase()}`;
+          const pdfButton =
+            leave.status.toLowerCase() === "accepted"
+              ? `<button class="pdf-btn" onclick="generatePDF(${leave.id}, '${fromDate}', '${toDate}', '${leave.reason}', '${leave.status}')">📄 PDF</button>`
+              : "—";
+
+          html += `
+            <tr>
+              <td>${fromDate}</td>
+              <td>${toDate}</td>
+              <td>${leave.reason}</td>
+              <td class="${statusClass}">${leave.status}</td>
+              <td>${pdfButton}</td>
+            </tr>`;
+        }
+
+        html += "</tbody></table>";
+        list.innerHTML = html;
+      } catch (err) {
+        console.error("❌ Error loading leaves:", err);
+        list.innerHTML = "<p>Error loading leave history.</p>";
+      }
+    }
+
+    // ✅ Generate PDF (Applied Date Removed)
+    async function generatePDF(id, fromDate, toDate, reason, status, appliedDate) {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+
+  const hostelName = localStorage.getItem("hostel") || "Not Provided";
+  const studentYear = localStorage.getItem("year") || "Not Provided";
+
+  // Header
+  doc.setFillColor(9, 132, 227);
+  doc.rect(0, 0, 210, 25, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(18);
+  doc.text("HOSTEL LEAVE APPROVAL FORM", 105, 17, { align: "center" });
+
+  // Student Info
+  doc.setFontSize(12);
+  doc.setTextColor(0, 0, 0);
+  doc.text(`Student Name: ${studentName}`, 14, 40);
+  doc.text(`Student ID: ${studentId}`, 14, 47);
+  doc.text(`Hostel Name: ${hostelName}`, 14, 54);
+  doc.text(`Year: ${studentYear}`, 14, 61);
+
+  // Leave Details
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(14);
+  doc.setTextColor(9, 132, 227);
+  doc.text("Leave Details", 14, 72);
+
+  const leaves = [[fromDate, toDate, reason, status]];
+  doc.autoTable({
+    head: [["From Date", "To Date", "Reason", "Status"]],
+    body: leaves,
+    startY: 77,
+    theme: "grid",
+    headStyles: {
+      fillColor: [9, 132, 227],
+      textColor: 255,
+      fontStyle: "bold",
+      halign: "center",
+    },
+    styles: { halign: "center", fontSize: 11 },
+  });
+
+  // Status section
+  let finalY = doc.lastAutoTable.finalY + 10;
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(40);
+  doc.text("Leave Status:", 14, finalY);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(status.toLowerCase() === "accepted" ? "green" : "red");
+  doc.text(status.toUpperCase(), 50, finalY);
+
+  // Signature Boxes
+  finalY += 20;
+  doc.setFontSize(12);
+  doc.setTextColor(0);
+  doc.text("Student Signature:", 14, finalY);
+  doc.text("Parent Signature:", 80, finalY);
+  doc.text("RC / Warden Signature:", 150, finalY);
+  doc.rect(14, finalY + 3, 40, 15);
+  doc.rect(80, finalY + 3, 40, 15);
+  doc.rect(150, finalY + 3, 40, 15);
+
+  // Footer
+  doc.setFontSize(10);
+  doc.setTextColor(100);
+  doc.text("Generated by Hostel Leave Management System © 2025", 105, 290, { align: "center" });
+
+  doc.save(`Leave_${id}.pdf`);
+}
+
+    // ✅ Load on start
+    window.onload = loadLeaves;
+  </script>
+</body>
+</html>
